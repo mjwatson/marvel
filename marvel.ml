@@ -1,3 +1,5 @@
+(* ***** Types ***** *)
+
 type primitive =   BOOLEAN of bool   
                  | INTEGER of int    
                  | STRING  of string 
@@ -8,6 +10,58 @@ type primitive =   BOOLEAN of bool
 type lisp =   SEXP     of lisp list
             | SYMBOL   of string 
             | CONSTANT of primitive;;
+
+(* ***** Read ***** *)
+
+open Str;;
+
+let tokenise s =
+  let seperate_brackets t = Str.global_replace (Str.regexp "[(|)]") " \\0 " t in
+  let split t             = Str.split (Str.regexp " +") t in
+  split (seperate_brackets s)
+
+let matches p s =
+ Str.string_match (Str.regexp p) s 0
+
+let convert p =
+ match p with 
+ | "true"                      -> CONSTANT(BOOLEAN(true))
+ | "false"                     -> CONSTANT(BOOLEAN(false))
+ | "nil"                       -> CONSTANT(Nil)
+ | s when matches "^\".*\"$" s -> CONSTANT(STRING(s))
+ | s when matches "^[0-9]+$" s -> CONSTANT(INTEGER(int_of_string s))
+ | s                           -> SYMBOL(s);; 
+
+let parse tokens =
+ let rec parse' ts out = 
+  match ts with 
+   | [] -> (SEXP(out), ts)
+   | t :: rest -> 
+    (match t with
+     | "(" -> (let (s, r) = (parse' rest []) in
+               parse' r (s :: out))
+     | ")" -> (SEXP(List.rev out), rest)
+     | s   -> parse' rest ((convert s) :: out))
+  
+ in let (s, r) = parse' tokens [] in
+  match s with SEXP(x::xs) -> x;;
+
+let read s =
+ let tokens = tokenise s in
+  parse tokens;;
+
+(* ***** Print ***** *)
+
+let rec print p =
+  match p with 
+  | BOOLEAN(b) -> string_of_bool b
+  | INTEGER(i) -> string_of_int i
+  | STRING(s)  -> s
+  | LIST(l)    -> String.concat " " ["("; String.concat " " (List.map print l); ")"]
+  | FUNC(f)    -> "<function>"
+  | Nil        -> "Nil";;
+
+(* ***** Eval ***** *)
 
 let is_true p =
  match p with 
@@ -83,3 +137,10 @@ and eval_sexp sexp e =
         | _        -> let es = List.map (fun x -> eval x e) sexp in 
                        call es;;
 
+
+(* ***** REPL ***** *)
+
+let root_env = create_env ();;
+
+let rep s = print (eval (read s) root_env);;
+    
