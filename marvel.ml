@@ -17,7 +17,7 @@ open Str;;
 
 let tokenise s =
   let seperate_brackets t = Str.global_replace (Str.regexp "[(|)]") " \\0 " t in
-  let split t             = Str.split (Str.regexp " +") t in
+  let split t             = Str.split (Str.regexp "[ \r\n]+") t in
   split (seperate_brackets s)
 
 let matches p s =
@@ -44,7 +44,7 @@ let parse tokens =
      | s   -> parse' rest ((convert s) :: out))
   
  in let (s, r) = parse' tokens [] in
-  match s with SEXP(x::xs) -> x;;
+  match s with SEXP(xs) -> SEXP(SYMBOL("do") :: (List.rev xs));;
 
 let read s =
  let tokens = tokenise s in
@@ -60,6 +60,12 @@ let rec print p =
   | LIST(l)    -> String.concat " " ["("; String.concat " " (List.map print l); ")"]
   | FUNC(f)    -> "<function>"
   | Nil        -> "Nil";;
+
+let rec print_lisp e =
+ match e with
+ | SYMBOL(s)   -> s
+ | CONSTANT(c) -> print c
+ | SEXP(xs)    -> String.concat " " ["("; String.concat " " (List.map print_lisp xs); ")"];;
 
 (* ***** Eval ***** *)
 
@@ -83,8 +89,10 @@ let rec env_find e name =
   try
    Hashtbl.find h name
   with _ ->
-   match p with Some(e) ->
-    env_find e name;;
+   match p with 
+   | Some(e) -> env_find e name
+   | _       -> Printf.printf "ERROR: no match for symbol '%s'\n" name;
+                raise Not_found;;
 
 let env_child vars xs parent = 
  match vars with SEXP(vars') ->
@@ -112,7 +120,12 @@ let call syms =
 
 let to_nil _ = Nil;;
 
+let last l = 
+ let n = List.length l in
+  List.nth l (n - 1);;
+
 let rec eval exp env = 
+    Printf.printf "EVAL: %s\n" (print_lisp exp);
     match exp with
     | SEXP(sexp)  -> eval_sexp   sexp env
     | SYMBOL(sym) -> eval_symbol  exp env
@@ -122,7 +135,7 @@ and eval_sexp sexp e =
     match sexp with
     | SYMBOL(command) :: args ->
         match command with 
-        | "do"     -> to_nil (List.map (fun x -> eval x e) args) 
+        | "do"     -> last (List.map (fun x -> eval x e) args) 
         | "quote"  -> quote args
         | "def"    -> (match args with 
                        | SYMBOL(name) :: value :: xs -> 
@@ -160,6 +173,10 @@ deff "nil?" (fun args -> match args with
                          | Nil :: _ -> BOOLEAN true
                          | _        -> BOOLEAN false);;
 
+deff "=" (fun args -> match args with 
+                      | a :: b :: _ -> BOOLEAN (a = b)
+                      | _           -> BOOLEAN false);;
+
 let list_math f i xs =
  let ns = List.map (fun n -> match n with INTEGER m -> m) xs in
  match ns with
@@ -176,4 +193,21 @@ deff "/" (list_math (/)   1);;
 (* ***** REPL ***** *)
 
 let rep s = print (eval (read s) root_env);;
+
+(* ***** MAIN ***** *)
+
+let load_file f =
+ let ic = open_in f in
+ let n = in_channel_length ic in
+ let s = String.create n in
+  really_input ic s 0 n;
+  close_in ic;
+  (s);;
+
+let main () =
+ let s = load_file Sys.argv.(1) in
+ let r = print (eval (read s) root_env) in
+  Printf.printf "Result = '%s'\n" r;;
+
+main ();;
     
