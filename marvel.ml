@@ -137,10 +137,43 @@ and eval_sexp sexp e =
         | _        -> let es = List.map (fun x -> eval x e) sexp in 
                        call es;;
 
-
-(* ***** REPL ***** *)
+(* ***** Standard functions **** *)
 
 let root_env = create_env ();;
+
+let deff s f = env_add root_env s (FUNC f);;
+
+deff "list" (fun xs -> LIST xs);;
+
+deff "car" (fun args -> match args with
+                        | LIST []        :: _ -> Nil
+                        | LIST (x :: xs) :: _ -> x);;
+
+deff "cdr" (fun args -> match args with
+                        | LIST []        :: _ -> Nil
+                        | LIST (x :: xs) :: _ -> LIST(xs));;
+
+deff "cons" (fun args -> match args with 
+                         | x :: LIST(xs) :: _ -> LIST(x :: xs));;
+
+deff "nil?" (fun args -> match args with
+                         | Nil :: _ -> BOOLEAN true
+                         | _        -> BOOLEAN false);;
+
+let list_math f i xs =
+ let ns = List.map (fun n -> match n with INTEGER m -> m) xs in
+ match ns with
+ | []       -> INTEGER(i)
+ | n :: ns' -> 
+   (let r = List.fold_left f n ns' in
+     INTEGER r);;
+
+deff "+" (list_math (+)   0);;
+deff "-" (list_math (-)   0);;
+deff "*" (list_math ( * ) 1);;
+deff "/" (list_math (/)   1);;
+  
+(* ***** REPL ***** *)
 
 let rep s = print (eval (read s) root_env);;
     
