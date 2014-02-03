@@ -1,0 +1,58 @@
+(defm defn
+  (fn (name args body)
+    (list (symbol "def") name 
+      (list (symbol "fn") args
+        body))))
+
+(defm defmacro
+  (fn (name args body)
+    (list (symbol "defm") name 
+      (list (symbol "fn") args
+        body))))
+
+(defmacro comment (_) nil)
+
+  
+  
+
+(defn reduce (f n xs)
+ (if (nil? (car xs))
+   n
+   (reduce f (f n (car xs)) (cdr xs))))
+
+(defn reverse (xs)
+  (reduce (fn (out x) (cons x out))
+          (list)
+          xs))
+
+(defn map (f xs)
+  (reverse 
+   (reduce (fn (out x) (cons (f x) out)) 
+           (list) 
+           xs)))
+
+(defmacro let (bindings body)
+  (reduce (fn (body binding) 
+            (list (list (symbol "fn") (list (car binding)) body) (car (cdr binding)))) 
+          body 
+          (reverse bindings)))
+
+
+(defmacro letrec (bindings body)
+  (reduce (fn (body binding) 
+            (list (list (symbol "fn") (list)
+              (list (symbol "do")
+                (list (symbol "def") (car binding) (car (cdr binding)))
+                body))))
+          body 
+          (reverse bindings)))
+
+(map (fn (n) (* n 2)) (list 1 2 3 4 5))
+
+(defn count (n)
+  (letrec ((count' (fn (n m) (if (= n 0)
+                            m
+                            (count' (- n 1) (+ m 1))))))
+    (count' n 0)))
+
+(count 100000)
