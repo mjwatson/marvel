@@ -5,10 +5,10 @@ type primitive =   BOOLEAN of bool
                  | STRING  of string 
                  | LIST    of primitive list 
                  | FUNC    of (primitive list -> primitive)
+                 | SYMBOL   of string 
                  | Nil;;
 
 type lisp =   SEXP     of lisp list
-            | SYMBOL   of string 
             | CONSTANT of primitive;;
 
 (* ***** Read ***** *)
@@ -23,14 +23,18 @@ let tokenise s =
 let matches p s =
  Str.string_match (Str.regexp p) s 0
 
+let remove_quotes s =
+ let n = String.length s in
+  String.sub s 1 (n - 2);;
+
 let convert p =
  match p with 
  | "true"                      -> CONSTANT(BOOLEAN(true))
  | "false"                     -> CONSTANT(BOOLEAN(false))
  | "nil"                       -> CONSTANT(Nil)
- | s when matches "^\".*\"$" s -> CONSTANT(STRING(s))
+ | s when matches "^\".*\"$" s -> CONSTANT(STRING(remove_quotes s))
  | s when matches "^[0-9]+$" s -> CONSTANT(INTEGER(int_of_string s))
- | s                           -> SYMBOL(s);; 
+ | s                           -> CONSTANT(SYMBOL(s));; 
 
 let parse tokens =
  let rec parse' ts out = 
@@ -44,7 +48,7 @@ let parse tokens =
      | s   -> parse' rest ((convert s) :: out))
   
  in let (s, r) = parse' tokens [] in
-  match s with SEXP(xs) -> SEXP(SYMBOL("do") :: (List.rev xs));;
+  match s with SEXP(xs) -> SEXP(CONSTANT(SYMBOL("do")) :: (List.rev xs));;
 
 let read s =
  let tokens = tokenise s in
@@ -56,16 +60,17 @@ let rec print p =
   match p with 
   | BOOLEAN(b) -> string_of_bool b
   | INTEGER(i) -> string_of_int i
-  | STRING(s)  -> s
+  | STRING(s)  -> String.concat "" ["\""; s; "\""]
   | LIST(l)    -> String.concat " " ["("; String.concat " " (List.map print l); ")"]
   | FUNC(f)    -> "<function>"
-  | Nil        -> "Nil";;
+  | Nil        -> "Nil"
+  | SYMBOL(s)  -> s;;
 
 let rec print_lisp e =
  match e with
- | SYMBOL(s)   -> s
- | CONSTANT(c) -> print c
- | SEXP(xs)    -> String.concat " " ["("; String.concat " " (List.map print_lisp xs); ")"];;
+ | CONSTANT(SYMBOL(s)) -> s
+ | CONSTANT(c)         -> print c
+ | SEXP(xs)            -> String.concat " " ["("; String.concat " " (List.map print_lisp xs); ")"];;
 
 (* ***** Eval ***** *)
 
@@ -78,8 +83,9 @@ let is_true p =
 type env = Env of (string, primitive) Hashtbl.t * env option;;
 
 let create_env () = 
-  Env(Hashtbl.create 100, None)
+    Env(Hashtbl.create 100, None);;
 
+  
 let env_add e name value =
  match e with Env(h,p) ->
   Hashtbl.replace h name value
@@ -94,25 +100,46 @@ let rec env_find e name =
    | _       -> Printf.printf "ERROR: no match for symbol '%s'\n" name;
                 raise Not_found;;
 
+
 let env_child vars xs parent = 
  match vars with SEXP(vars') ->
-  let vars'' = List.map (fun v -> match v with SYMBOL(s) -> s) vars' in 
+  let vars'' = List.map (fun v -> match v with CONSTANT(SYMBOL(s)) -> s) vars' in 
   let e      = Env(Hashtbl.create 100, Some parent) in
    List.map (fun (n,v) -> env_add e n v) (List.combine vars'' xs);
    e;;
 
+let root_env = create_env ();;
+
+let macro_table = create_env ();;
+
+let is_macro name =
+ match macro_table with Env(h,p) ->
+  try
+   Hashtbl.find h name;
+   Printf.printf "FOUND MACRO '%s'\n" name;
+   true
+  with _ ->
+    false;;
+
 let rec quote args = 
  let quote' a =
+  (*Printf.printf "QUOTE' '%s'\n" (print_lisp a);*)
   match a with
   | SEXP(sexp)  -> quote sexp
-  | SYMBOL(sym) -> STRING(sym)
   | CONSTANT(c) -> c
  in
   LIST(List.map quote' args);;
 
-let eval_symbol sym e = 
- match sym with SYMBOL(s) ->
-  env_find e s;;
+let rec unquote args = 
+ (*Printf.printf "UNQUOTE '%s'\n" (print args);*)
+ match args with
+ | LIST(xs) -> SEXP(List.map unquote xs) 
+ | x        -> CONSTANT(x);;
+
+
+let eval_symbol sym e =
+  (*Printf.printf "EVAL_SYMBOL '%s'\n" sym;*)
+  env_find e sym;;
 
 let call syms =
   match syms with
@@ -124,22 +151,31 @@ let last l =
  let n = List.length l in
   List.nth l (n - 1);;
 
+let lisp_cons x xs = 
+ match xs with LIST(ys) ->
+     x :: ys;;
+
 let rec eval exp env = 
-    Printf.printf "EVAL: %s\n" (print_lisp exp);
+    (*Printf.printf "EVAL: %s\n" (print_lisp exp);*)
     match exp with
-    | SEXP(sexp)  -> eval_sexp   sexp env
-    | SYMBOL(sym) -> eval_symbol  exp env
-    | CONSTANT(c) -> c
+    | SEXP(sexp)            -> eval_sexp   sexp env
+    | CONSTANT(SYMBOL(sym)) -> eval_symbol  sym env
+    | CONSTANT(c)           -> c
 
 and eval_sexp sexp e =
     match sexp with
-    | SYMBOL(command) :: args ->
+    | SEXP(s) :: args -> (let es = (List.map (fun x -> eval x e) sexp) in
+                            call es)
+    | CONSTANT(SYMBOL command) :: args ->
         match command with 
         | "do"     -> last (List.map (fun x -> eval x e) args) 
         | "quote"  -> quote args
         | "def"    -> (match args with 
-                       | SYMBOL(name) :: value :: xs -> 
+                       | CONSTANT(SYMBOL name) :: value :: xs -> 
                           to_nil(env_add e name (eval value e)))
+        | "defm"   -> (match args with 
+                       | CONSTANT(SYMBOL name) :: value :: xs -> 
+                          to_nil(env_add macro_table name (eval value root_env)))
         | "fn"     -> (match args with vars :: fexp :: xs -> 
                         FUNC(fun xs -> eval fexp (env_child vars xs e)))
         | "if"     -> (match args with 
@@ -147,12 +183,13 @@ and eval_sexp sexp e =
                           if is_true (eval cond e) 
                           then eval success e 
                           else eval failure e)
-        | _        -> let es = List.map (fun x -> eval x e) sexp in 
-                       call es;;
+        | m when is_macro m -> (let f = (eval (CONSTANT (SYMBOL m)) macro_table) in 
+                                 eval (unquote (call (lisp_cons f (quote args)))) e) 
+        | _  -> let es = (List.map (fun x -> eval x e) sexp) in
+                            call es;;
 
 (* ***** Standard functions **** *)
 
-let root_env = create_env ();;
 
 let deff s f = env_add root_env s (FUNC f);;
 
@@ -177,6 +214,9 @@ deff "=" (fun args -> match args with
                       | a :: b :: _ -> BOOLEAN (a = b)
                       | _           -> BOOLEAN false);;
 
+deff "symbol" (fun args -> match args with
+                           | (STRING s) :: _ -> SYMBOL(s));;
+
 let list_math f i xs =
  let ns = List.map (fun n -> match n with INTEGER m -> m) xs in
  match ns with
@@ -189,6 +229,8 @@ deff "+" (list_math (+)   0);;
 deff "-" (list_math (-)   0);;
 deff "*" (list_math ( * ) 1);;
 deff "/" (list_math (/)   1);;
+
+deff "str" (fun xs -> STRING (print (LIST xs)));;
   
 (* ***** REPL ***** *)
 

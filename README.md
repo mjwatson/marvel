@@ -13,11 +13,12 @@ Done:
 * Print
 * List basics
 * Interpret source files
+* Macros
+* Tail recursion
+* Basic stds: reduce, map, let, letrec
 
 Todo:
 
-* Macros
-* Tail recursion
 * Real reader
 * Read macros
 * Standard library
