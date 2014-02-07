@@ -83,7 +83,7 @@ let is_true p =
 type env = Env of (string, primitive) Hashtbl.t * env option;;
 
 let create_env () = 
-    Env(Hashtbl.create 100, None);;
+    Env(Hashtbl.create 1, None);;
 
   
 let env_add e name value =
@@ -104,7 +104,7 @@ let rec env_find e name =
 let env_child vars xs parent = 
  match vars with SEXP(vars') ->
   let vars'' = List.map (fun v -> match v with CONSTANT(SYMBOL(s)) -> s) vars' in 
-  let e      = Env(Hashtbl.create 100, Some parent) in
+  let e      = Env(Hashtbl.create 1, Some parent) in
    List.map (fun (n,v) -> env_add e n v) (List.combine vars'' xs);
    e;;
 
@@ -138,7 +138,7 @@ let rec unquote args =
 
 
 let eval_symbol sym e =
-  (*Printf.printf "EVAL_SYMBOL '%s'\n" sym;*)
+  Printf.printf "EVAL_SYMBOL '%s'\n" sym;
   env_find e sym;;
 
 let call syms =
@@ -156,7 +156,7 @@ let lisp_cons x xs =
      x :: ys;;
 
 let rec eval exp env = 
-    (*Printf.printf "EVAL: %s\n" (print_lisp exp);*)
+    Printf.printf "EVAL: %s\n" (print_lisp exp);
     match exp with
     | SEXP(sexp)            -> eval_sexp   sexp env
     | CONSTANT(SYMBOL(sym)) -> eval_symbol  sym env
@@ -247,9 +247,13 @@ let load_file f =
   (s);;
 
 let main () =
- let s = load_file Sys.argv.(1) in
- let r = print (eval (read s) root_env) in
-  Printf.printf "Result = '%s'\n" r;;
+ let process path = 
+   let s = load_file path in
+   let r = print (eval (read s) root_env) in
+     Printf.printf "Result %s = '%s'\n" path r
+ in
+   let _ :: args = Array.to_list Sys.argv in
+    List.iter process args;;
 
 main ();;
     

@@ -12,9 +12,6 @@
 
 (defmacro comment (_) nil)
 
-  
-  
-
 (defn reduce (f n xs)
  (if (nil? (car xs))
    n
@@ -47,12 +44,3 @@
           body 
           (reverse bindings)))
 
-(map (fn (n) (* n 2)) (list 1 2 3 4 5))
-
-(defn count (n)
-  (letrec ((count' (fn (n m) (if (= n 0)
-                            m
-                            (count' (- n 1) (+ m 1))))))
-    (count' n 0)))
-
-(count 100000)
