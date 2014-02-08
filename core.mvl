@@ -1,3 +1,9 @@
+(def nil #n)
+
+(def true #t)
+
+(def false #f)
+
 (defm defn
   (fn (name args body)
     (list (symbol "def") name 
@@ -9,6 +15,7 @@
     (list (symbol "defm") name 
       (list (symbol "fn") args
         body))))
+
 
 (defmacro comment (_) nil)
 
